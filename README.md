@@ -4,7 +4,7 @@
 > pip install -r requirements.txt
 
 ## Dataset
-For training, we used the following [Exoplanet Hunting in Deep Space](https://www.kaggle.com/keplersmachines/kepler-labelled-time-series-data). 
+For training, we used the following [Exoplanet Hunting in Deep Space](https://www.kaggle.com/keplersmachines/kepler-labelled-time-series-data). Copy both files *exoTrain.csv* and *exoTest.csv* into the subfolder *dataset*.
 
 
 ## Usage
