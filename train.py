@@ -306,10 +306,12 @@ if __name__ == "__main__":
                         help="Batch size for training")
     parser.add_argument("--num_workers", dest='num_workers', action='store', type=int,
                         help='Number of workers for dataloader')
+    parser.add_argument("--cross_validation", dest="cross_valid", action='store',
+                        help="Run experiment with k-fold cross-validation")
 
     parser.set_defaults(preprocess=True, fourier=True, smoothing=True, oversample=None, window_size=None,
                         extra_aug=None, num_epochs=100, lr=1e-2, steps_epochs=[50, 80, 100], batch_size=1024,
-                        num_workers=8)
+                        num_workers=8, cross_valid=None)
     args = parser.parse_args()
 
     # check if GPU available
