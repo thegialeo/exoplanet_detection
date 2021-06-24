@@ -14,6 +14,7 @@ from tsaug import RandomTimeWarp, RandomJitter
 from scipy.fftpack import fft
 from scipy.ndimage.filters import gaussian_filter
 from tqdm import tqdm
+from sklearn.model_selection import KFold
 
 
 def try_gpu():
@@ -304,12 +305,11 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
 
 
 def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, preprocess, fourier, smoothing, oversample, batch_size, 
-                   num_workers, steps_epochs, lr, num_epochs):
+                   num_workers, steps_epochs, lr, num_epochs, subfolder_name):
     """Run the whole experiment procedure"""
 
     # check if GPU available
     ctx = try_gpu()
-    print("ctx:", ctx)
     
     # apply window sliding
     if window_size is not None:
@@ -397,7 +397,7 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
 
     # training
     train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample,
-          window_size, preprocess, fourier, smoothing, extra_aug)
+          window_size, preprocess, fourier, smoothing, extra_aug, subfolder_name)
 
 
 
@@ -436,16 +436,39 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
 
-    # load data
-    df_train = pd.read_csv(os.path.join('./dataset', 'exoTrain.csv'))
-    df_test = pd.read_csv(os.path.join('./dataset', 'exoTest.csv'))
+    if args.cross_valid is not None:
+        # merge Kaggle trainset and testset
+        df_train = pd.read_csv(os.path.join('./dataset', 'exoTrain.csv'))
+        df_test = pd.read_csv(os.path.join('./dataset', 'exoTest.csv'))
+        df_all = pd.concat([df_train, df_test])
+        
+        # separate data and labels
+        X = np.float32(df_all.values[:, 1:])
+        y = np.float32(df_all.values[:, 0] - 1) 
 
-    x_train = np.float32(df_train.values[:, 1:])
-    y_train = np.float32(df_train.values[:, 0] - 1)
-    x_test = np.float32(df_test.values[:, 1:])
-    y_test = np.float32(df_test.values[:, 0] - 1)
-    print("Load data")
+        # K-Fold cross-validation k=5
+        kf = KFold(n_splits=5)
+        for k, (train_index, test_index) in enumerate(kf.split(X)):
+            X_train = X[train_index]
+            X_test = X[test_index]
+            y_train = y[train_index]
+            y_test = y[test_index]
 
-    # run experiment
-    run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
-                   args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs)
+            # run experiment
+            run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
+                           args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k))
+
+    else:
+        # load data according to Kaggle train-test split
+        df_train = pd.read_csv(os.path.join('./dataset', 'exoTrain.csv'))
+        df_test = pd.read_csv(os.path.join('./dataset', 'exoTest.csv'))
+
+        x_train = np.float32(df_train.values[:, 1:])
+        y_train = np.float32(df_train.values[:, 0] - 1)
+        x_test = np.float32(df_test.values[:, 1:])
+        y_test = np.float32(df_test.values[:, 0] - 1)
+        print("Load data")
+
+        # run experiment
+        run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
+                       args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "Kaggle-split")
