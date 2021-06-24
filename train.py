@@ -302,6 +302,106 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
 
 
 
+
+def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, preprocess, fourier, smoothing, oversample, batch_size, 
+                   num_workers, steps_epochs, lr, num_epochs):
+    """Run the whole experiment procedure"""
+
+    # check if GPU available
+    ctx = try_gpu()
+    print("ctx:", ctx)
+    
+    # apply window sliding
+    if window_size is not None:
+        x_train_slide = []
+        y_train_slide = []
+        step_size = window_size // 2
+        for i, seq in enumerate(x_train):
+            for j, win in enumerate(window_sliding(seq, window_size)):
+                if j % step_size == 0:
+                    x_train_slide.append(win)
+                    y_train_slide.append(y_train[i])
+        x_train = np.array(x_train_slide)
+        y_train = np.array(y_train_slide)
+        print("Perform window sliding with size: {}".format(window_size))
+
+    # apply extra augmentation: random time warp, random noise
+    if extra_aug is not None:
+        augmenter = (RandomTimeWarp() @ extra_aug
+                     + RandomJitter() @ extra_aug)
+        print("Perform Random Time Warp")
+        print("Add Random Noise")
+
+        x_train = augmenter.run(x_train)
+
+    # pre-processing
+    if preprocess:
+        print("Pre-processing data")
+        x_train = preprocessing(x_train, fourier, smoothing)
+        if window_size is None:
+            x_test = preprocessing(x_test, fourier, smoothing)
+        print("Outlier Removal")
+        print("Normalization")
+        if fourier:
+            print("Perform Fourier Transform")
+        if smoothing:
+            print("Perform Gaussian Smoothing")
+
+
+    # oversampling
+    if oversample is not None:
+        if oversample == 'random':
+            oversampler = RandomOverSampler(sampling_strategy=1.0)
+        elif oversample == 'SMOTE':
+            oversampler = SMOTE(sampling_strategy=1.0, k_neighbors=15)
+        elif oversample == 'BorderSMOTE':
+            oversampler =  BorderlineSMOTE(sampling_strategy=1.0, k_neighbors=15, m_neighbors=5)
+        elif oversample == 'SVMSMOTE':
+            oversampler = SVMSMOTE(sampling_strategy=1.0, k_neighbors=15, m_neighbors=8)
+        elif oversample == 'ADASYN':
+            oversampler = ADASYN(sampling_strategy=1.0, n_neighbors=8)
+        else:
+            print("{} is not a valid oversampling argument.".format(oversample))
+            raise ValueError
+        x_train, y_train = oversampler.fit_resample(x_train, y_train)
+        print("Perform Oversampling: {}".format(oversample))
+
+
+    # dataloader
+    trainset = data.ArrayDataset(x_train, y_train)
+    testset = data.ArrayDataset(x_test, y_test)
+
+    trainloader = data.DataLoader(trainset, batch_size, True, num_workers=num_workers, pin_memory=True)
+    testloader = data.DataLoader(testset, batch_size, True)
+
+
+    # model
+    net = nn.Sequential()
+    with net.name_scope():
+        net.add(nn.Dense(100, activation='relu'),
+                nn.Dense(100, activation='relu'),
+                nn.BatchNorm(),
+                nn.Dropout(0.2),
+                nn.Dense(2))
+
+    # init weights
+    net.collect_params().initialize(init=init.Xavier(), ctx=ctx)
+
+    # scheduler + trainer
+    it_per_epoch = math.ceil(len(trainset) / batch_size)
+    steps_iterations = [s * it_per_epoch for s in steps_epochs]
+    schedule = mx.lr_scheduler.MultiFactorScheduler(step=steps_iterations, factor=0.5)
+    optimizer = mx.optimizer.Adam(learning_rate=lr, lr_scheduler=schedule)
+    criterion = gluon.loss.SoftmaxCrossEntropyLoss()
+    trainer = gluon.Trainer(params=net.collect_params(), optimizer=optimizer)
+
+    # training
+    train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample,
+          window_size, preprocess, fourier, smoothing, extra_aug)
+
+
+
+
 if __name__ == "__main__":
     # parser
     parser = argparse.ArgumentParser()
@@ -335,8 +435,6 @@ if __name__ == "__main__":
                         num_workers=8, cross_valid=None)
     args = parser.parse_args()
 
-    # check if GPU available
-    ctx = try_gpu()
 
     # load data
     df_train = pd.read_csv(os.path.join('./dataset', 'exoTrain.csv'))
@@ -348,90 +446,6 @@ if __name__ == "__main__":
     y_test = np.float32(df_test.values[:, 0] - 1)
     print("Load data")
 
-    # apply window sliding
-    if args.window_size is not None:
-        x_train_slide = []
-        y_train_slide = []
-        step_size = args.window_size // 2
-        for i, seq in enumerate(x_train):
-            for j, win in enumerate(window_sliding(seq, args.window_size)):
-                if j % step_size == 0:
-                    x_train_slide.append(win)
-                    y_train_slide.append(y_train[i])
-        x_train = np.array(x_train_slide)
-        y_train = np.array(y_train_slide)
-        print("Perform window sliding with size: {}".format(args.window_size))
-
-    # apply extra augmentation: random time warp, random noise
-    if args.extra_aug is not None:
-        augmenter = (RandomTimeWarp() @ args.extra_aug
-                     + RandomJitter() @ args.extra_aug)
-        print("Perform Random Time Warp")
-        print("Add Random Noise")
-
-        x_train = augmenter.run(x_train)
-
-    # pre-processing
-    if args.preprocess:
-        print("Pre-processing data")
-        x_train = preprocessing(x_train, args.fourier, args.smoothing)
-        if args.window_size is None:
-            x_test = preprocessing(x_test, args.fourier, args.smoothing)
-        print("Outlier Removal")
-        print("Normalization")
-        if args.fourier:
-            print("Perform Fourier Transform")
-        if args.smoothing:
-            print("Perform Gaussian Smoothing")
-
-
-    # oversampling
-    if args.oversample is not None:
-        if args.oversample == 'random':
-            oversampler = RandomOverSampler(sampling_strategy=1.0)
-        elif args.oversample == 'SMOTE':
-            oversampler = SMOTE(sampling_strategy=1.0, k_neighbors=15)
-        elif args.oversample == 'BorderSMOTE':
-            oversampler =  BorderlineSMOTE(sampling_strategy=1.0, k_neighbors=15, m_neighbors=5)
-        elif args.oversample == 'SVMSMOTE':
-            oversampler = SVMSMOTE(sampling_strategy=1.0, k_neighbors=15, m_neighbors=8)
-        elif args.oversample == 'ADASYN':
-            oversampler = ADASYN(sampling_strategy=1.0, n_neighbors=8)
-        else:
-            print("{} is not a valid oversampling argument.".format(args.oversample))
-            raise ValueError
-        x_train, y_train = oversampler.fit_resample(x_train, y_train)
-        print("Perform Oversampling: {}".format(args.oversample))
-
-
-    # dataloader
-    trainset = data.ArrayDataset(x_train, y_train)
-    testset = data.ArrayDataset(x_test, y_test)
-
-    trainloader = data.DataLoader(trainset, args.batch_size, True, num_workers=args.num_workers, pin_memory=True)
-    testloader = data.DataLoader(testset, args.batch_size, True)
-
-
-    # model
-    net = nn.Sequential()
-    with net.name_scope():
-        net.add(nn.Dense(100, activation='relu'),
-                nn.Dense(100, activation='relu'),
-                nn.BatchNorm(),
-                nn.Dropout(0.2),
-                nn.Dense(2))
-
-    # init weights
-    net.collect_params().initialize(init=init.Xavier(), ctx=ctx)
-
-    # scheduler + trainer
-    it_per_epoch = math.ceil(len(trainset) / args.batch_size)
-    steps_iterations = [s * it_per_epoch for s in args.steps_epochs]
-    schedule = mx.lr_scheduler.MultiFactorScheduler(step=steps_iterations, factor=0.5)
-    optimizer = mx.optimizer.Adam(learning_rate=args.lr, lr_scheduler=schedule)
-    criterion = gluon.loss.SoftmaxCrossEntropyLoss()
-    trainer = gluon.Trainer(params=net.collect_params(), optimizer=optimizer)
-
-    # training
-    train(net, trainloader, testloader, criterion, trainer, ctx, args.batch_size, args.num_epochs, args.oversample,
-          args.window_size, args.preprocess, args.fourier, args.smoothing, args.extra_aug)
+    # run experiment
+    run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
+                   args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs)
