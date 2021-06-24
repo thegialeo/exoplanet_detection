@@ -149,7 +149,7 @@ def preprocessing(X, fourier=True, smoothing=True):
 
 
 def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample=None, win_size=None,
-          preprocess=True, fourier=True, smoothing=True, extra_aug=None):
+          preprocess=True, fourier=True, smoothing=True, extra_aug=None, subfolder_name=None):
     """Train and evaluate a model with CPU or GPU."""
     print('Training on:', ctx)
     loss_hist = []
@@ -231,7 +231,10 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
     plt.grid(True, which="both")
     plt.xlabel('epoch', fontsize=14)
     plt.ylabel('average loss', fontsize=14)
-    plt.savefig(os.path.join('./plots', 'loss' + end_path + '.png'))
+    if subfolder_name is not None:
+        plt.savefig(os.path.join('./plots', subfolder_name, 'loss' + end_path + '.png'))
+    else:
+        plt.savefig(os.path.join('./plots', 'loss' + end_path + '.png'))
 
     # save train accuracy plot
     plt.figure(num=None, figsize=(8, 6))
@@ -239,7 +242,10 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
     plt.grid(True, which="both")
     plt.xlabel('epoch', fontsize=14)
     plt.ylabel('accuracy', fontsize=14)
-    plt.savefig(os.path.join('./plots', 'train_accuracy' + end_path + '.png'))
+    if subfolder_name is not None:
+        plt.savefig(os.path.join('./plots', subfolder_name, 'train_accuracy' + end_path + '.png'))
+    else:
+        plt.savefig(os.path.join('./plots', 'train_accuracy' + end_path + '.png'))
 
     # save test accuracy plot
     plt.figure(num=None, figsize=(8, 6))
@@ -247,7 +253,10 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
     plt.grid(True, which="both")
     plt.xlabel('epoch', fontsize=14)
     plt.ylabel('accuracy', fontsize=14)
-    plt.savefig(os.path.join('./plots', 'test_accuracy' + end_path + '.png'))
+    if subfolder_name is not None:
+        plt.savefig(os.path.join('./plots', subfolder_name, 'test_accuracy' + end_path + '.png'))
+    else:
+        plt.savefig(os.path.join('./plots', 'test_accuracy' + end_path + '.png'))
 
     # save train f1 score plot
     plt.figure(num=None, figsize=(8, 6))
@@ -255,7 +264,10 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
     plt.grid(True, which="both")
     plt.xlabel('epoch', fontsize=14)
     plt.ylabel('f1 score', fontsize=14)
-    plt.savefig(os.path.join('./plots', 'train_f1_score' + end_path + '.png'))
+    if subfolder_name is not None:
+        plt.savefig(os.path.join('./plots', subfolder_name, 'train_f1_score' + end_path + '.png'))
+    else:
+        plt.savefig(os.path.join('./plots', 'train_f1_score' + end_path + '.png'))
 
     # save train f1 score plot
     plt.figure(num=None, figsize=(8, 6))
@@ -263,16 +275,25 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
     plt.grid(True, which="both")
     plt.xlabel('epoch', fontsize=14)
     plt.ylabel('f1 score', fontsize=14)
-    plt.savefig(os.path.join('./plots', 'test_f1_score' + end_path + '.png'))
+    if subfolder_name is not None:
+        plt.savefig(os.path.join('./plots', subfolder_name, 'test_f1_score' + end_path + '.png'))
+    else:
+        plt.savefig(os.path.join('./plots', 'test_f1_score' + end_path + '.png'))
 
     # close all figures
     plt.close("all")
 
     # save model
-    net.save_parameters(os.path.join('./models', "net" + end_path + '.params'))
+    if subfolder_name is not None:
+        net.save_parameters(os.path.join('./models', subfolder_name, "net" + end_path + '.params'))
+    else:
+        net.save_parameters(os.path.join('./models', "net" + end_path + '.params'))
 
     # save logs
-    file = open(os.path.join('./logs', 'log' + end_path + '.txt'), 'w')
+    if subfolder_name is not None:
+        file = open(os.path.join('./logs', subfolder_name, 'log' + end_path + '.txt'), 'w')
+    else:
+        file = open(os.path.join('./logs', 'log' + end_path + '.txt'), 'w')
     print('Final Loss:', loss_hist[-1], file=file)
     print('Final Train Accuracy:', train_acc_hist[-1], file=file)
     print('Final Test Accuracy:', test_acc_hist[-1], file=file)
