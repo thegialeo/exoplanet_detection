@@ -152,12 +152,15 @@ def preprocessing(X, fourier=True, smoothing=True):
 def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample=None, win_size=None,
           preprocess=True, fourier=True, smoothing=True, extra_aug=None, subfolder_name=None):
     """Train and evaluate a model with CPU or GPU."""
+    
     print('Training on:', ctx)
+    
     loss_hist = []
     train_acc_hist = []
     test_acc_hist = []
     train_f1_hist = []
     test_f1_hist = []
+    
     for epoch in range(num_epochs):
         start = time.time()
         if win_size is not None:
@@ -301,6 +304,8 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
     print('Final Train F1 Score:', train_f1_hist[-1], file=file)
     print('Final Test F1 Score:', test_f1_hist[-1], file=file)
 
+    return [loss_hist[-1], train_acc_hist[-1], test_acc_hist[-1], train_f1_hist[-1], test_f1_hist[-1]]
+
 
 
 
@@ -396,10 +401,10 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
     trainer = gluon.Trainer(params=net.collect_params(), optimizer=optimizer)
 
     # training
-    train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample,
-          window_size, preprocess, fourier, smoothing, extra_aug, subfolder_name)
+    scores = train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample,
+                   window_size, preprocess, fourier, smoothing, extra_aug, subfolder_name)
 
-
+    return scores
 
 
 if __name__ == "__main__":
@@ -427,7 +432,7 @@ if __name__ == "__main__":
                         help="Batch size for training")
     parser.add_argument("--num_workers", dest='num_workers', action='store', type=int,
                         help='Number of workers for dataloader')
-    parser.add_argument("--cross_validation", dest="cross_valid", action='store',
+    parser.add_argument("--cross_validation", dest="cross_valid", action='store_true',
                         help="Run experiment with k-fold cross-validation")
 
     parser.set_defaults(preprocess=True, fourier=True, smoothing=True, oversample=None, window_size=None,
@@ -446,17 +451,63 @@ if __name__ == "__main__":
         X = np.float32(df_all.values[:, 1:])
         y = np.float32(df_all.values[:, 0] - 1) 
 
+        # record scores
+        loss_hist = []
+        train_acc_hist = []
+        test_acc_hist = []
+        train_f1_hist = []
+        test_f1_hist = []
+
         # K-Fold cross-validation k=5
         kf = KFold(n_splits=5)
         for k, (train_index, test_index) in enumerate(kf.split(X)):
-            X_train = X[train_index]
-            X_test = X[test_index]
+            x_train = X[train_index]
+            x_test = X[test_index]
             y_train = y[train_index]
             y_test = y[test_index]
 
             # run experiment
-            run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
-                           args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k))
+            scores = run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, args.smoothing, 
+                                    args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k))
+
+            # record scores 
+            loss_hist.append(scores[0])
+            train_acc_hist.append(scores[1])
+            test_acc_hist.append(scores[2])
+            train_f1_hist.append(scores[3])
+            test_f1_hist.append(scores[4])
+
+        # compute mean
+        mean_train_acc = sum(train_acc_hist) / len(train_acc_hist)
+        mean_test_acc = sum(test_acc_hist) / len(test_acc_hist)
+        mean_train_f1 = sum(train_f1_hist) / len(train_acc_hist)
+        mean_test_f1 = sum(test_acc_hist) / len(test_acc_hist)
+
+        # print final results
+        print()
+        print(80 * '-')
+        print()
+        print("k-fold cross-validation results:")
+        print("Training Accuracy:", train_acc_hist)
+        print("Test Accuracy:", test_acc_hist)
+        print("Training F1 Score:", train_f1_hist)
+        print("Test F1 Score:", test_f1_hist)
+        print("Mean Training Accuracy:", mean_train_acc)
+        print("Mean Test Accuracy:", mean_test_acc)
+        print("Mean Training F1 Score:", mean_train_f1)
+        print("Mean Test F1 Score:", mean_test_f1)
+
+        # save log file
+        file = open(os.path.join('./logs', 'score_log_cross-validation.txt'), 'w')
+        print("Training Accuracy:", train_acc_hist, file=file)
+        print("Test Accuracy:", test_acc_hist, file=file)
+        print("Training F1 Score:", train_f1_hist, file=file)
+        print("Test F1 Score:", test_f1_hist, file=file)
+        print("Mean Training Accuracy:", mean_train_acc, file=file)
+        print("Mean Test Accuracy:", mean_test_acc, file=file)
+        print("Mean Training F1 Score:", mean_train_f1, file=file)
+        print("Mean Test F1 Score:", mean_test_f1, file=file)
+
 
     else:
         # load data according to Kaggle train-test split
