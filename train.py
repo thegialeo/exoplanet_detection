@@ -56,74 +56,78 @@ def mx_window_sliding(seq, n=2):
 
 def evaluate_accuracy(data_iter, net, ctx, win_size=None):
     """Evaluate accuracy of a model on the given data set."""
-    acc = mx.metric.Accuracy()
-    if win_size is not None:
-        loader = tqdm(data_iter)
-    else:
-        loader = data_iter
-    for data, label in loader:
-        data = data.as_in_context(ctx)
-        label = label.as_in_context(ctx)
-        output = net(data)
-        acc.update(preds=output, labels=label)
+    with autograd.predict_mode():
+        acc = mx.metric.Accuracy()
+        if win_size is not None:
+            loader = tqdm(data_iter)
+        else:
+            loader = data_iter
+        for data, label in loader:
+            data = data.as_in_context(ctx)
+            label = label.as_in_context(ctx)
+            output = net(data)
+            acc.update(preds=output, labels=label)
     return acc.get()[1]
 
 
 def evaluate_f1_score(data_iter, net, ctx, win_size=None):
     """Evaluate f1 score of a model on the given data set."""
-    f1_score = mx.metric.F1(average='macro')
-    if win_size is not None:
-        loader = tqdm(data_iter)
-    else:
-        loader = data_iter
-    for data, label in loader:
-        data = data.as_in_context(ctx)
-        label = label.as_in_context(ctx)
-        output = net(data)
-        f1_score.update(preds=output, labels=label)
+    with autograd.predict_mode():
+        f1_score = mx.metric.F1(average='macro')
+        if win_size is not None:
+            loader = tqdm(data_iter)
+        else:
+            loader = data_iter
+        for data, label in loader:
+            data = data.as_in_context(ctx)
+            label = label.as_in_context(ctx)
+            output = net(data)
+            f1_score.update(preds=output, labels=label)
     return f1_score.get()[1]
 
 def evaluate_ws_accuracy(data_iter, net, ctx, win_size):
     """Evaluate accuracy of a model on the given data set using window sliding."""
-    acc = mx.metric.Accuracy()
-    for data, label in tqdm(data_iter):
-        label = label.as_in_context(ctx)
-        # window sliding over testset
-        seq = nd.transpose(data)
-        generator = mx_window_sliding(seq, win_size)
-        data_slide = next(generator).expand_dims(0).as_in_context(ctx)
-        for win in generator:
-            data_slide = nd.concat(data_slide, win.expand_dims(0).as_in_context(ctx), dim=0)
-        # compute mean network output over all windows of sequence
-        output_sum = nd.zeros((data.shape[0], 2), ctx=ctx)
-        for data in data_slide:
-            data_processed = nd.array(preprocessing(nd.transpose(data).asnumpy())).as_in_context(ctx)
-            output = net(data_processed)
-            output_sum += output
-        output_mean = output_sum / data_slide.shape[0]
-        acc.update(preds=output_mean, labels=label)
+    with autograd.predict_mode():
+        acc = mx.metric.Accuracy()
+        for data, label in tqdm(data_iter):
+            label = label.as_in_context(ctx)
+            # window sliding over testset
+            seq = nd.transpose(data)
+            generator = mx_window_sliding(seq, win_size)
+            data_slide = next(generator).expand_dims(0).as_in_context(ctx)
+            for win in generator:
+                data_slide = nd.concat(data_slide, win.expand_dims(0).as_in_context(ctx), dim=0)
+            # compute mean network output over all windows of sequence
+            output_sum = nd.zeros((data.shape[0], 2), ctx=ctx)
+            for data in data_slide:
+                data_processed = nd.array(preprocessing(nd.transpose(data).asnumpy())).as_in_context(ctx)
+                output = net(data_processed)
+                output_sum += output
+            output_mean = output_sum / data_slide.shape[0]
+            acc.update(preds=output_mean, labels=label)
     return acc.get()[1]
 
 
 def evaluate_ws_f1_score(data_iter, net, ctx, win_size):
     """Evaluate f1 score of a model on the given data set using window sliding."""
-    f1_score = mx.metric.F1(average='macro')
-    for data, label in tqdm(data_iter):
-        label = label.as_in_context(ctx)
-        # window sliding over testset
-        seq = nd.transpose(data)
-        generator = mx_window_sliding(seq, win_size)
-        data_slide = next(generator).expand_dims(0).as_in_context(ctx)
-        for win in generator:
-            data_slide = nd.concat(data_slide, win.expand_dims(0).as_in_context(ctx), dim=0)
-        # compute mean network output over all windows of sequence
-        output_sum = nd.zeros((data.shape[0], 2), ctx=ctx)
-        for data in data_slide:
-            data_processed = nd.array(preprocessing(nd.transpose(data).asnumpy())).as_in_context(ctx)
-            output = net(data_processed)
-            output_sum += output
-        output_mean = output_sum / data_slide.shape[0]
-        f1_score.update(preds=output_mean, labels=label)
+    with autograd.predict_mode():
+        f1_score = mx.metric.F1(average='macro')
+        for data, label in tqdm(data_iter):
+            label = label.as_in_context(ctx)
+            # window sliding over testset
+            seq = nd.transpose(data)
+            generator = mx_window_sliding(seq, win_size)
+            data_slide = next(generator).expand_dims(0).as_in_context(ctx)
+            for win in generator:
+                data_slide = nd.concat(data_slide, win.expand_dims(0).as_in_context(ctx), dim=0)
+            # compute mean network output over all windows of sequence
+            output_sum = nd.zeros((data.shape[0], 2), ctx=ctx)
+            for data in data_slide:
+                data_processed = nd.array(preprocessing(nd.transpose(data).asnumpy())).as_in_context(ctx)
+                output = net(data_processed)
+                output_sum += output
+            output_mean = output_sum / data_slide.shape[0]
+            f1_score.update(preds=output_mean, labels=label)
     return f1_score.get()[1]
 
 def preprocessing(X, fourier=True, smoothing=True):
@@ -171,7 +175,7 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
         for i, (data, label) in enumerate(loader):
             data = data.as_in_context(ctx)
             label = label.as_in_context(ctx)
-            with autograd.record():
+            with autograd.record(train_mode=True):
                 output = net(data)
                 loss = criterion(output, label)
             loss.backward()
@@ -440,14 +444,14 @@ if __name__ == "__main__":
                         help="Run experiment with k-fold cross-validation")
 
     parser.set_defaults(preprocess=True, fourier=True, smoothing=True, oversample=None, window_size=None,
-                        extra_aug=None, num_epochs=100, lr=1e-2, steps_epochs=[50, 80, 100], batch_size=1024,
+                        extra_aug=None, num_epochs=100, lr=1e-2, steps_epochs=[20, 40, 55, 70, 80, 90, 95, 100], batch_size=1024,
                         num_workers=8, cross_valid=None)
     args = parser.parse_args()
 
 
     # check if GPU available
-    #ctx = try_gpu()
-    ctx = mx.cpu()
+    ctx = try_gpu()
+    #ctx = mx.cpu()
 
     if args.cross_valid is not None:
         # merge Kaggle trainset and testset
