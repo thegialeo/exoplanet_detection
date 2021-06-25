@@ -14,7 +14,7 @@ from tsaug import RandomTimeWarp, RandomJitter
 from scipy.fftpack import fft
 from scipy.ndimage.filters import gaussian_filter
 from tqdm import tqdm
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 
 
 def try_gpu():
@@ -213,6 +213,12 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
         os.mkdir('./models')
     if not os.path.exists('./logs'):
         os.mkdir('./logs')
+    if not os.path.exists(os.path.join('./plots', subfolder_name)):
+        os.mkdir(os.path.join('./plots', subfolder_name))
+    if not os.path.exists(os.path.join('./models', subfolder_name)):
+        os.mkdir(os.path.join('./models', subfolder_name))
+    if not os.path.exists(os.path.join('./logs', subfolder_name)):
+        os.mkdir(os.path.join('./logs', subfolder_name))
 
     # ending string name
     end_path = ''
@@ -310,11 +316,8 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
 
 
 def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, preprocess, fourier, smoothing, oversample, batch_size, 
-                   num_workers, steps_epochs, lr, num_epochs, subfolder_name):
+                   num_workers, steps_epochs, lr, num_epochs, subfolder_name, ctx):
     """Run the whole experiment procedure"""
-
-    # check if GPU available
-    ctx = try_gpu()
     
     # apply window sliding
     if window_size is not None:
@@ -368,6 +371,7 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         else:
             print("{} is not a valid oversampling argument.".format(oversample))
             raise ValueError
+        print("non-zero labels:", np.count_nonzero(y_train))
         x_train, y_train = oversampler.fit_resample(x_train, y_train)
         print("Perform Oversampling: {}".format(oversample))
 
@@ -441,6 +445,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
 
+    # check if GPU available
+    #ctx = try_gpu()
+    ctx = mx.cpu()
+
     if args.cross_valid is not None:
         # merge Kaggle trainset and testset
         df_train = pd.read_csv(os.path.join('./dataset', 'exoTrain.csv'))
@@ -458,9 +466,9 @@ if __name__ == "__main__":
         train_f1_hist = []
         test_f1_hist = []
 
-        # K-Fold cross-validation k=5
-        kf = KFold(n_splits=5)
-        for k, (train_index, test_index) in enumerate(kf.split(X)):
+        # stratified K-Fold cross-validation k=5
+        skf = StratifiedKFold(n_splits=10)
+        for k, (train_index, test_index) in enumerate(skf.split(X, y)):
             x_train = X[train_index]
             x_test = X[test_index]
             y_train = y[train_index]
@@ -468,7 +476,7 @@ if __name__ == "__main__":
 
             # run experiment
             scores = run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, args.smoothing, 
-                                    args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k))
+                                    args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k), ctx)
 
             # record scores 
             loss_hist.append(scores[0])
@@ -480,8 +488,8 @@ if __name__ == "__main__":
         # compute mean
         mean_train_acc = sum(train_acc_hist) / len(train_acc_hist)
         mean_test_acc = sum(test_acc_hist) / len(test_acc_hist)
-        mean_train_f1 = sum(train_f1_hist) / len(train_acc_hist)
-        mean_test_f1 = sum(test_acc_hist) / len(test_acc_hist)
+        mean_train_f1 = sum(train_f1_hist) / len(train_f1_hist)
+        mean_test_f1 = sum(test_f1_hist) / len(test_f1_hist)
 
         # print final results
         print()
@@ -522,4 +530,4 @@ if __name__ == "__main__":
 
         # run experiment
         run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
-                       args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "Kaggle-split")
+                       args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "Kaggle-split", ctx)
