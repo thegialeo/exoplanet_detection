@@ -322,7 +322,11 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
 def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, preprocess, fourier, smoothing, oversample, batch_size, 
                    num_workers, steps_epochs, lr, num_epochs, subfolder_name, ctx):
     """Run the whole experiment procedure"""
-    
+
+    print()
+    print(80 * '#')
+    print()
+
     # apply window sliding
     if window_size is not None:
         x_train_slide = []
@@ -375,7 +379,6 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         else:
             print("{} is not a valid oversampling argument.".format(oversample))
             raise ValueError
-        print("non-zero labels:", np.count_nonzero(y_train))
         x_train, y_train = oversampler.fit_resample(x_train, y_train)
         print("Perform Oversampling: {}".format(oversample))
 
@@ -409,9 +412,11 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
     trainer = gluon.Trainer(params=net.collect_params(), optimizer=optimizer)
 
     # training
+    print()
     scores = train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample,
                    window_size, preprocess, fourier, smoothing, extra_aug, subfolder_name)
-
+    print()
+    
     return scores
 
 
@@ -444,14 +449,14 @@ if __name__ == "__main__":
                         help="Run experiment with k-fold cross-validation")
 
     parser.set_defaults(preprocess=True, fourier=True, smoothing=True, oversample=None, window_size=None,
-                        extra_aug=None, num_epochs=100, lr=1e-2, steps_epochs=[20, 40, 55, 70, 80, 90, 95, 100], batch_size=1024,
+                        extra_aug=None, num_epochs=1, lr=1e-2, steps_epochs=[20, 40, 55, 70, 80, 90, 95, 100], batch_size=1024,
                         num_workers=8, cross_valid=None)
     args = parser.parse_args()
 
 
     # check if GPU available
-    ctx = try_gpu()
-    #ctx = mx.cpu()
+    #ctx = try_gpu()
+    ctx = mx.cpu()
 
     if args.cross_valid is not None:
         # merge Kaggle trainset and testset
@@ -470,7 +475,7 @@ if __name__ == "__main__":
         train_f1_hist = []
         test_f1_hist = []
 
-        # stratified K-Fold cross-validation k=5
+        # stratified K-Fold cross-validation
         skf = StratifiedKFold(n_splits=10)
         for k, (train_index, test_index) in enumerate(skf.split(X, y)):
             x_train = X[train_index]
@@ -509,8 +514,23 @@ if __name__ == "__main__":
         print("Mean Training F1 Score:", mean_train_f1)
         print("Mean Test F1 Score:", mean_test_f1)
 
+        # ending string name
+        end_path = ''
+        if args.oversample is not None:
+            end_path += '_{}'.format(args.oversample)
+        if args.window_size is not None:
+            end_path += '_ws_{}'.format(args.window_size)
+        if not args.preprocess:
+            end_path += '_no_preprocessing'
+        if not args.fourier:
+            end_path += '_no_fourier'
+        if not args.smoothing:
+            end_path += '_no_smoothing'
+        if args.extra_aug is not None:
+            end_path += '_{}'.format(args.extra_aug)
+
         # save log file
-        file = open(os.path.join('./logs', 'score_log_cross-validation.txt'), 'w')
+        file = open(os.path.join('./logs', 'log_cross-validation' + end_path + '.txt'), 'w')
         print("Training Accuracy:", train_acc_hist, file=file)
         print("Test Accuracy:", test_acc_hist, file=file)
         print("Training F1 Score:", train_f1_hist, file=file)
