@@ -14,9 +14,12 @@ from tsaug import RandomTimeWarp, RandomJitter
 from scipy.fftpack import fft
 from scipy.ndimage.filters import gaussian_filter
 from tqdm import tqdm
-from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score, accuracy_score
+
 
 
 def try_gpu():
@@ -427,7 +430,7 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         return scores
 
     elif method == 'KNN':
-        # init classifier
+        # K-nearest neighbors classifier
         clf = KNeighborsClassifier()
         
         # training
@@ -443,9 +446,36 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         return [acc, f1_score]
     
     elif method == 'SVC':
-        pass 
+        # Linear Support Vector Classifier
+        clf = SVC()
+
+        # training
+        clf.fit(x_train, y_train)
+
+        # prediction
+        pred = clf.predict(x_test)
+
+        # evaluate test scores
+        f1_score = f1_score(y_test, pred, average='macro')
+        acc = accuracy_score(y_test, pred)
+
+        return [acc, f1_score]
+
     elif method == 'RandomForest':
-        pass 
+        # Random Forest Classifier
+        clf = RandomForestClassifier(max_depth=2, random_state=0)
+        
+        # training 
+        clf.fit(x_train, y_train)
+
+        # prediction
+        pred = clf.predict(x_test)
+
+        # evaluate test
+        f1_score = f1_score(y_test, pred, average='macro')
+        acc = accuracy_score(y_test, pred)
+
+        return [acc, f1_score]
     
     
 
