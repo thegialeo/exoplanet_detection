@@ -233,7 +233,7 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
         os.mkdir(os.path.join('./logs', subfolder_name))
 
     # ending string name
-    end_path = ''
+    end_path = method
     if oversample is not None:
         end_path += '_{}'.format(oversample)
     if win_size is not None:
@@ -440,7 +440,7 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         f1_score = f1_score(y_test, pred, average='macro')
         acc = accuracy_score(y_test, pred)
 
-        return acc, f1_score
+        return [acc, f1_score]
     
     elif method == 'SVC':
         pass 
@@ -522,16 +522,22 @@ if __name__ == "__main__":
                                     args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k), ctx, args.method)
           
             # record scores 
-            loss_hist.append(scores[0])
-            train_acc_hist.append(scores[1])
-            test_acc_hist.append(scores[2])
-            train_f1_hist.append(scores[3])
-            test_f1_hist.append(scores[4])
+            if args.method == 'MLP':
+                loss_hist.append(scores[0])
+                train_acc_hist.append(scores[1])
+                test_acc_hist.append(scores[2])
+                train_f1_hist.append(scores[3])
+                test_f1_hist.append(scores[4])
+            else:
+                test_acc_hist.append(scores[0])
+                test_f1_hist.append(scores[1])
 
         # compute mean
-        mean_train_acc = sum(train_acc_hist) / len(train_acc_hist)
+        if args.method == 'MLP':
+            mean_train_acc = sum(train_acc_hist) / len(train_acc_hist)
+            mean_train_f1 = sum(train_f1_hist) / len(train_f1_hist)
+        
         mean_test_acc = sum(test_acc_hist) / len(test_acc_hist)
-        mean_train_f1 = sum(train_f1_hist) / len(train_f1_hist)
         mean_test_f1 = sum(test_f1_hist) / len(test_f1_hist)
 
         # print final results
@@ -539,17 +545,19 @@ if __name__ == "__main__":
         print(80 * '#')
         print()
         print("k-fold cross-validation results:")
-        print("Training Accuracy:", train_acc_hist)
+        if args.method == 'MLP':
+            print("Training Accuracy:", train_acc_hist)
+            print("Training F1 Score:", train_f1_hist)
         print("Test Accuracy:", test_acc_hist)
-        print("Training F1 Score:", train_f1_hist)
         print("Test F1 Score:", test_f1_hist)
-        print("Mean Training Accuracy:", mean_train_acc)
+        if args.method == 'MLP':
+            print("Mean Training Accuracy:", mean_train_acc)
+            print("Mean Training F1 Score:", mean_train_f1)
         print("Mean Test Accuracy:", mean_test_acc)
-        print("Mean Training F1 Score:", mean_train_f1)
         print("Mean Test F1 Score:", mean_test_f1)
 
         # ending string name
-        end_path = ''
+        end_path = args.method
         if args.oversample is not None:
             end_path += '_{}'.format(args.oversample)
         if args.window_size is not None:
@@ -565,13 +573,15 @@ if __name__ == "__main__":
 
         # save log file
         file = open(os.path.join('./logs', 'log_cross-validation' + end_path + '.txt'), 'w')
-        print("Training Accuracy:", train_acc_hist, file=file)
+        if args.method == 'MLP':
+            print("Training Accuracy:", train_acc_hist, file=file)
+            print("Training F1 Score:", train_f1_hist, file=file)
         print("Test Accuracy:", test_acc_hist, file=file)
-        print("Training F1 Score:", train_f1_hist, file=file)
         print("Test F1 Score:", test_f1_hist, file=file)
-        print("Mean Training Accuracy:", mean_train_acc, file=file)
+        if args.method == 'MLP':
+            print("Mean Training Accuracy:", mean_train_acc, file=file)
+            print("Mean Training F1 Score:", mean_train_f1, file=file)
         print("Mean Test Accuracy:", mean_test_acc, file=file)
-        print("Mean Training F1 Score:", mean_train_f1, file=file)
         print("Mean Test F1 Score:", mean_test_f1, file=file)
 
 
