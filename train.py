@@ -15,6 +15,8 @@ from scipy.fftpack import fft
 from scipy.ndimage.filters import gaussian_filter
 from tqdm import tqdm
 from sklearn.model_selection import StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import f1_score, accuracy_score
 
 
 def try_gpu():
@@ -326,7 +328,7 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
 
 
 def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, preprocess, fourier, smoothing, oversample, batch_size, 
-                   num_workers, steps_epochs, lr, num_epochs, subfolder_name, ctx):
+                   num_workers, steps_epochs, lr, num_epochs, subfolder_name, ctx, method):
     """Run the whole experiment procedure"""
 
     print()
@@ -388,42 +390,64 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         x_train, y_train = oversampler.fit_resample(x_train, y_train)
         print("Perform Oversampling: {}".format(oversample))
 
+    if method == 'MLP':
+        # dataloader
+        trainset = data.ArrayDataset(x_train, y_train)
+        testset = data.ArrayDataset(x_test, y_test)
 
-    # dataloader
-    trainset = data.ArrayDataset(x_train, y_train)
-    testset = data.ArrayDataset(x_test, y_test)
+        trainloader = data.DataLoader(trainset, batch_size, True, num_workers=num_workers, pin_memory=True)
+        testloader = data.DataLoader(testset, batch_size, True)
 
-    trainloader = data.DataLoader(trainset, batch_size, True, num_workers=num_workers, pin_memory=True)
-    testloader = data.DataLoader(testset, batch_size, True)
+        # model
+        net = nn.Sequential()
+        with net.name_scope():
+            net.add(nn.Dense(100, activation='relu'),
+                    nn.Dense(100, activation='relu'),
+                    nn.BatchNorm(),
+                    nn.Dropout(0.2),
+                    nn.Dense(2))
 
+        # init weights
+        net.collect_params().initialize(init=init.Xavier(), ctx=ctx)
 
-    # model
-    net = nn.Sequential()
-    with net.name_scope():
-        net.add(nn.Dense(100, activation='relu'),
-                nn.Dense(100, activation='relu'),
-                nn.BatchNorm(),
-                nn.Dropout(0.2),
-                nn.Dense(2))
+        # scheduler + trainer
+        it_per_epoch = math.ceil(len(trainset) / batch_size)
+        steps_iterations = [s * it_per_epoch for s in steps_epochs]
+        schedule = mx.lr_scheduler.MultiFactorScheduler(step=steps_iterations, factor=0.5)
+        optimizer = mx.optimizer.Adam(learning_rate=lr, lr_scheduler=schedule)
+        criterion = gluon.loss.SoftmaxCrossEntropyLoss()
+        trainer = gluon.Trainer(params=net.collect_params(), optimizer=optimizer)
 
-    # init weights
-    net.collect_params().initialize(init=init.Xavier(), ctx=ctx)
+        # training
+        print()
+        scores = train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample,
+                    window_size, preprocess, fourier, smoothing, extra_aug, subfolder_name)
+        print()
 
-    # scheduler + trainer
-    it_per_epoch = math.ceil(len(trainset) / batch_size)
-    steps_iterations = [s * it_per_epoch for s in steps_epochs]
-    schedule = mx.lr_scheduler.MultiFactorScheduler(step=steps_iterations, factor=0.5)
-    optimizer = mx.optimizer.Adam(learning_rate=lr, lr_scheduler=schedule)
-    criterion = gluon.loss.SoftmaxCrossEntropyLoss()
-    trainer = gluon.Trainer(params=net.collect_params(), optimizer=optimizer)
+        return scores
 
-    # training
-    print()
-    scores = train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample,
-                   window_size, preprocess, fourier, smoothing, extra_aug, subfolder_name)
-    print()
+    elif method == 'KNN':
+        # init classifier
+        clf = KNeighborsClassifier()
+        
+        # training
+        clf.fit(x_train, y_train)
+        
+        # prediction
+        pred = clf.predict(x_test)
+        
+        # evaluate test scores
+        f1_score = f1_score(y_test, pred, average='macro')
+        acc = accuracy_score(y_test, pred)
+
+        return acc, f1_score
     
-    return scores
+    elif method == 'SVC':
+        pass 
+    elif method == 'RandomForest':
+        pass 
+    
+    
 
 
 if __name__ == "__main__":
@@ -493,11 +517,10 @@ if __name__ == "__main__":
             y_train = y[train_index]
             y_test = y[test_index]
 
-            if args.method == 'MLP':
-                # run experiment
-                scores = run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, args.smoothing, 
-                                        args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k), ctx)
-
+            # run experiment
+            scores = run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, args.smoothing, 
+                                    args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k), ctx, args.method)
+          
             # record scores 
             loss_hist.append(scores[0])
             train_acc_hist.append(scores[1])
@@ -563,7 +586,6 @@ if __name__ == "__main__":
         y_test = np.float32(df_test.values[:, 0] - 1)
         print("Load data")
 
-        if args.method == 'MLP':
-            # run experiment
-            run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
-                        args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "Kaggle-split", ctx)
+        # run experiment
+        run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
+                    args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "Kaggle-split", ctx, args.method)
