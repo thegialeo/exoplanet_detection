@@ -453,10 +453,12 @@ if __name__ == "__main__":
                         help='Number of workers for dataloader')
     parser.add_argument("--cross_validation", dest="cross_valid", action='store_true',
                         help="Run experiment with k-fold cross-validation")
+    parser.add_argument("--method", dest="method", action='store',
+                        help="Use another machine learning method than MLP")
 
     parser.set_defaults(preprocess=True, fourier=True, smoothing=True, oversample=None, window_size=None,
                         extra_aug=None, num_epochs=100, lr=1e-2, steps_epochs=[20, 40, 55, 70, 80, 90, 95, 100], batch_size=1024,
-                        num_workers=8, cross_valid=None)
+                        num_workers=8, cross_valid=None, method='MLP')
     args = parser.parse_args()
 
 
@@ -491,9 +493,10 @@ if __name__ == "__main__":
             y_train = y[train_index]
             y_test = y[test_index]
 
-            # run experiment
-            scores = run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, args.smoothing, 
-                                    args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k), ctx)
+            if args.method == 'MLP':
+                # run experiment
+                scores = run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, args.smoothing, 
+                                        args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k), ctx)
 
             # record scores 
             loss_hist.append(scores[0])
@@ -560,6 +563,7 @@ if __name__ == "__main__":
         y_test = np.float32(df_test.values[:, 0] - 1)
         print("Load data")
 
-        # run experiment
-        run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
-                       args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "Kaggle-split", ctx)
+        if args.method == 'MLP':
+            # run experiment
+            run_experiment(x_train, y_train, x_test, y_test, args.window_size, args.extra_aug, args.preprocess, args.fourier, 
+                        args.smoothing, args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "Kaggle-split", ctx)
