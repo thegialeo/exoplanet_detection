@@ -187,10 +187,11 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
                            else (1 - 0.01) * moving_loss + 0.01 * curr_loss)
 
         if win_size is not None:
-            print("Evaluate Test Accuracy:")
-            test_acc = evaluate_ws_accuracy(testloader, net, ctx, win_size)
-            print("Evaluate Test F1 Score:")
-            test_f1 = evaluate_ws_f1_score(testloader, net, ctx, win_size)
+            if epoch == (num_epochs-1):
+                print("Evaluate Test Accuracy:")
+                test_acc = evaluate_ws_accuracy(testloader, net, ctx, win_size)
+                print("Evaluate Test F1 Score:")
+                test_f1 = evaluate_ws_f1_score(testloader, net, ctx, win_size)
         else:
             test_acc = evaluate_accuracy(testloader, net, ctx, win_size)
             test_f1 = evaluate_f1_score(testloader, net, ctx, win_size)
@@ -198,17 +199,22 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
             print("Evaluate Train Accuracy:")
         train_acc = evaluate_accuracy(trainloader, net, ctx, win_size)
         if win_size is not None:
-            print("Evaluate Test Accuracy:")
+            print("Evaluate Train F1 Score:")
         train_f1 = evaluate_f1_score(trainloader, net, ctx, win_size)
-        print('epoch {}, loss {:.5f}, train acc {:.3f}, test acc {:.3f}, train f1 {:.3f}, test f1 {:.3f}  time {:.1f} sec'.format(
-            epoch + 1, moving_loss, train_acc, test_acc, train_f1, test_f1, time.time() - start))
+        if (win_size is not None) and (epoch < (num_epochs-1)):
+            print('epoch {}, loss {:.5f}, train acc {:.3f}, train f1 {:.3f},  time {:.1f} sec'.format(
+                epoch + 1, moving_loss, train_acc, train_f1, time.time() - start))
+        else:
+            print('epoch {}, loss {:.5f}, train acc {:.3f}, test acc {:.3f}, train f1 {:.3f}, test f1 {:.3f},  time {:.1f} sec'.format(
+                epoch + 1, moving_loss, train_acc, test_acc, train_f1, test_f1, time.time() - start))
 
 
         loss_hist.append(moving_loss)
         train_acc_hist.append(train_acc)
-        test_acc_hist.append(test_acc)
         train_f1_hist.append(train_f1)
-        test_f1_hist.append(test_f1)
+        if not ((win_size is not None) and (epoch < (num_epochs-1))):
+            test_acc_hist.append(test_acc)
+            test_f1_hist.append(test_f1)
 
     # create directory
     if not os.path.exists('./plots'):
@@ -324,7 +330,7 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
     """Run the whole experiment procedure"""
 
     print()
-    print(80 * '#')
+    print(80 * '-')
     print()
 
     # apply window sliding
@@ -449,7 +455,7 @@ if __name__ == "__main__":
                         help="Run experiment with k-fold cross-validation")
 
     parser.set_defaults(preprocess=True, fourier=True, smoothing=True, oversample=None, window_size=None,
-                        extra_aug=None, num_epochs=1, lr=1e-2, steps_epochs=[20, 40, 55, 70, 80, 90, 95, 100], batch_size=1024,
+                        extra_aug=None, num_epochs=100, lr=1e-2, steps_epochs=[20, 40, 55, 70, 80, 90, 95, 100], batch_size=1024,
                         num_workers=8, cross_valid=None)
     args = parser.parse_args()
 
@@ -463,6 +469,7 @@ if __name__ == "__main__":
         df_train = pd.read_csv(os.path.join('./dataset', 'exoTrain.csv'))
         df_test = pd.read_csv(os.path.join('./dataset', 'exoTest.csv'))
         df_all = pd.concat([df_train, df_test])
+        print("Load data")
         
         # separate data and labels
         X = np.float32(df_all.values[:, 1:])
@@ -476,6 +483,7 @@ if __name__ == "__main__":
         test_f1_hist = []
 
         # stratified K-Fold cross-validation
+        print("Prepare stratified k-fold cross-validation")
         skf = StratifiedKFold(n_splits=10)
         for k, (train_index, test_index) in enumerate(skf.split(X, y)):
             x_train = X[train_index]
@@ -502,7 +510,7 @@ if __name__ == "__main__":
 
         # print final results
         print()
-        print(80 * '-')
+        print(80 * '#')
         print()
         print("k-fold cross-validation results:")
         print("Training Accuracy:", train_acc_hist)
@@ -527,7 +535,7 @@ if __name__ == "__main__":
         if not args.smoothing:
             end_path += '_no_smoothing'
         if args.extra_aug is not None:
-            end_path += '_{}'.format(args.extra_aug)
+            end_path += '_aug_{}'.format(args.extra_aug)
 
         # save log file
         file = open(os.path.join('./logs', 'log_cross-validation' + end_path + '.txt'), 'w')
