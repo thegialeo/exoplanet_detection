@@ -19,6 +19,7 @@ from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score, accuracy_score
+from mxnet.gluon.model_zoo import vision
 
 
 
@@ -159,7 +160,7 @@ def preprocessing(X, fourier=True, smoothing=True):
 
 
 def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample=None, win_size=None,
-          preprocess=True, fourier=True, smoothing=True, extra_aug=None, subfolder_name=None):
+          preprocess=True, fourier=True, smoothing=True, extra_aug=None, subfolder_name=None, method=None):
     """Train and evaluate a model with CPU or GPU."""
     
     print('Training on:', ctx)
@@ -236,7 +237,7 @@ def train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num
         os.mkdir(os.path.join('./logs', subfolder_name))
 
     # ending string name
-    end_path = method
+    end_path = "_" + method
     if oversample is not None:
         end_path += '_{}'.format(oversample)
     if win_size is not None:
@@ -393,7 +394,12 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         x_train, y_train = oversampler.fit_resample(x_train, y_train)
         print("Perform Oversampling: {}".format(oversample))
 
-    if method == 'MLP':
+    if method == 'MLP' or method == 'CNN':
+        # add channel dimension for CNN
+        if method == 'CNN':
+            x_train = np.expand_dims(x_train, axis=1)
+            x_test = np.expand_dims(x_test, axis=1)
+
         # dataloader
         trainset = data.ArrayDataset(x_train, y_train)
         testset = data.ArrayDataset(x_test, y_test)
@@ -402,13 +408,24 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         testloader = data.DataLoader(testset, batch_size, True)
 
         # model
-        net = nn.Sequential()
-        with net.name_scope():
-            net.add(nn.Dense(100, activation='relu'),
-                    nn.Dense(100, activation='relu'),
-                    nn.BatchNorm(),
-                    nn.Dropout(0.2),
-                    nn.Dense(2))
+        if method == 'MLP':
+            net = nn.Sequential()
+            with net.name_scope():
+                net.add(nn.Dense(100, activation='relu'),
+                        nn.Dense(100, activation='relu'),
+                        nn.BatchNorm(),
+                        nn.Dropout(0.2),
+                        nn.Dense(2))
+
+        if method == 'CNN': 
+            net = nn.Sequential()
+            with net.name_scope():
+                net.add(nn.Conv1D(channels=16, kernel_size=5, activation='relu'),
+                        nn.MaxPool1D(pool_size=2, strides=2),
+                        nn.Conv1D(channels=32, kernel_size=4, activation='relu'),
+                        nn.MaxPool1D(pool_size=2, strides=2),
+                        nn.Flatten(),
+                        nn.Dense(2))
 
         # init weights
         net.collect_params().initialize(init=init.Xavier(), ctx=ctx)
@@ -424,7 +441,7 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         # training
         print()
         scores = train(net, trainloader, testloader, criterion, trainer, ctx, batch_size, num_epochs, oversample,
-                    window_size, preprocess, fourier, smoothing, extra_aug, subfolder_name)
+                    window_size, preprocess, fourier, smoothing, extra_aug, subfolder_name, method)
         print()
 
         return scores
@@ -434,48 +451,57 @@ def run_experiment(x_train, y_train, x_test, y_test, window_size, extra_aug, pre
         clf = KNeighborsClassifier()
         
         # training
+        print("Train K-nearest Neighbors Classifier")
         clf.fit(x_train, y_train)
         
         # prediction
         pred = clf.predict(x_test)
         
         # evaluate test scores
-        f1_score = f1_score(y_test, pred, average='macro')
+        print("Test K-nearest Neighbors Classifier")
+        f1 = f1_score(y_test, pred, average='macro')
         acc = accuracy_score(y_test, pred)
 
-        return [acc, f1_score]
+        return [acc, f1]
     
     elif method == 'SVC':
-        # Linear Support Vector Classifier
+        # Support Vector Classifier
         clf = SVC()
 
         # training
+        print("Train Support Vector Classifier")
         clf.fit(x_train, y_train)
 
         # prediction
         pred = clf.predict(x_test)
 
         # evaluate test scores
-        f1_score = f1_score(y_test, pred, average='macro')
+        print("Test Support Vector Classifier")
+        f1 = f1_score(y_test, pred, average='macro')
         acc = accuracy_score(y_test, pred)
 
-        return [acc, f1_score]
+        return [acc, f1]
 
     elif method == 'RandomForest':
         # Random Forest Classifier
         clf = RandomForestClassifier(max_depth=2, random_state=0)
         
         # training 
+        print("Train Random Forest Classifier")
         clf.fit(x_train, y_train)
 
         # prediction
+        print("Test Random Forest Classifier")
         pred = clf.predict(x_test)
 
         # evaluate test
-        f1_score = f1_score(y_test, pred, average='macro')
+        f1 = f1_score(y_test, pred, average='macro')
         acc = accuracy_score(y_test, pred)
 
-        return [acc, f1_score]
+        return [acc, f1]
+    
+    else:
+        print("method {} can not be identified or is not implemented".format(method))
     
     
 
@@ -509,16 +535,21 @@ if __name__ == "__main__":
                         help="Run experiment with k-fold cross-validation")
     parser.add_argument("--method", dest="method", action='store',
                         help="Use another machine learning method than MLP")
+    parser.add_argument("--cpu", dest="cpu", action='store_true',
+                        help="Use CPU even if GPU is available")
 
     parser.set_defaults(preprocess=True, fourier=True, smoothing=True, oversample=None, window_size=None,
                         extra_aug=None, num_epochs=100, lr=1e-2, steps_epochs=[20, 40, 55, 70, 80, 90, 95, 100], batch_size=1024,
-                        num_workers=8, cross_valid=None, method='MLP')
+                        num_workers=8, cross_valid=None, method='MLP', cpu=False)
     args = parser.parse_args()
 
 
     # check if GPU available
-    #ctx = try_gpu()
-    ctx = mx.cpu()
+    if args.cpu:
+        ctx = mx.cpu()
+    else:
+        ctx = try_gpu()
+
 
     if args.cross_valid is not None:
         # merge Kaggle trainset and testset
@@ -552,7 +583,7 @@ if __name__ == "__main__":
                                     args.oversample, args.batch_size, args.num_workers, args.steps_epochs, args.lr, args.num_epochs, "k-fold-cv-{}".format(k), ctx, args.method)
           
             # record scores 
-            if args.method == 'MLP':
+            if args.method == 'MLP' or args.method == 'CNN':
                 loss_hist.append(scores[0])
                 train_acc_hist.append(scores[1])
                 test_acc_hist.append(scores[2])
@@ -563,7 +594,7 @@ if __name__ == "__main__":
                 test_f1_hist.append(scores[1])
 
         # compute mean
-        if args.method == 'MLP':
+        if args.method == 'MLP' or args.method == 'CNN':
             mean_train_acc = sum(train_acc_hist) / len(train_acc_hist)
             mean_train_f1 = sum(train_f1_hist) / len(train_f1_hist)
         
@@ -587,7 +618,7 @@ if __name__ == "__main__":
         print("Mean Test F1 Score:", mean_test_f1)
 
         # ending string name
-        end_path = args.method
+        end_path = "_" + args.method
         if args.oversample is not None:
             end_path += '_{}'.format(args.oversample)
         if args.window_size is not None:
