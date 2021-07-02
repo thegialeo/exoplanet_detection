@@ -45,7 +45,7 @@ Other machine learning methods include K-Nearest Neighbor Classifier, Support Ve
 Leo.Nguyen@gmx.de
 
 ## License
-MIT License
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 
 
