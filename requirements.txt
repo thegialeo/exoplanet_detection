@@ -1,7 +1,7 @@
 scipy==1.4.1
 pandas==0.24.2
 tsaug==0.1.0
-mxnet==1.5.1.post0
+mxnet==1.9.1
 imbalanced_learn==0.6.1
 numpy==1.17.2
 matplotlib==3.0.3
